@@ -17,8 +17,7 @@ class TraitementImage
 public:
     TraitementImage(Mat *image);
 
-    /// Destructeur
-    ~TraitementImage();
+
 
     /// Detection des contours
     vector <vector<Point> > ObjectfindContour(Mat& imageFindContour);
@@ -28,7 +27,7 @@ public:
 
     /// Classification des objets
     Mat DetectionBatiment(Mat& image);
-    Mat DetectionVegetation(Mat& image);
+    Mat DetectionVegetation();
     Mat RemplaceValuePixel(Mat& image, int minRouge, int maxRouge, int minBleu, int maxBleu, int minVert, int maxVert);
     Mat pixelOfRoad();
 
@@ -43,7 +42,8 @@ public:
     /// Visualisation des images
     Mat affiche(Mat& image, char* const title);
 
-
+    /// Destructeur
+    ~TraitementImage();
 
 private:
     Mat src;

@@ -36,3 +36,7 @@ SOURCES += main.cpp \
 HEADERS += \
     traitementimage.h \
     percepunit.h
+
+FORMS +=
+
+RESOURCES +=

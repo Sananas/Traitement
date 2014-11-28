@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/Images">
+        <file>process.png</file>
+        <file>Black Grey Open.png</file>
+    </qresource>
+</RCC>

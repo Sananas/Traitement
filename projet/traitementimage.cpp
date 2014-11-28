@@ -1,28 +1,28 @@
 #include "traitementimage.h"
 #include <percepunit.h>
-#include <imagealgorithm.h>
+
 
 TraitementImage::TraitementImage(Mat *image)
 {
     src = *image;
 
     /// Initialisation des variables
-    Mat ImageBaseBatiment, findVegetation,vegeta;
+    Mat ImageBaseBatiment, vegetation;
 
 
     /// Création de copies de l'image en entrée
-    src.copyTo(ImageBaseBatiment); src.copyTo(findVegetation);
+    src.copyTo(ImageBaseBatiment);
 
 
     /// 1. Detection de la Vegetation
-    vegeta = DetectionVegetation(findVegetation);
-    findVegetation.copyTo(src);
-    findVegetation = Erosion(findVegetation, 2);
-    vegeta = Erosion(vegeta, 7);
-    vegeta = Dilatation(vegeta, 6);
-    vegeta = Erosion(vegeta, 4);
-    vegetContours = ObjectfindContour(vegeta);          // On obtient les contours de la végétation
+    vegetation = DetectionVegetation();
 
+    vegetation = Erosion(vegetation, 7);
+    vegetation = Dilatation(vegetation, 6);
+    vegetation = Erosion(vegetation, 4);
+    vegetContours = ObjectfindContour(vegetation);      // On obtient les contours de la végétation
+    affiche(vegetation, "Contour Vegetation");
+    vegetation.release();                               // Release memory Free
 
     /// 2. Detection de la route
     pixelOfRoad();                                      // On trouve les pixels correspondant à la teinte de la route
@@ -34,77 +34,70 @@ TraitementImage::TraitementImage(Mat *image)
     Mat RoadContour;
     srcRoad.copyTo(RoadContour);
     roadContours = ObjectfindContour(RoadContour);      // On obtient les contours de la route
-
+    srcRoad.release();                                  // Release memory Free
+    affiche(RoadContour, "Contour Routes");
+    RoadContour.release();                              // Release memory Free
 
     /// 4. Detection des contours des bâtiments
     percepunit Classification(&ImageBaseBatiment);      // Classification supervisée sur l'image afin d'améliorer le traitement
     BatimentTraitement(ImageBaseBatiment);              // On obtient les contours de la végétation
-
-
-    /// 5. Affichage des resutats
-    affiche(src, "src");
-    affiche(ImageBaseBatiment, "Detection Batiment");
+    ImageBaseBatiment.release();                        // Release memory Free
 
     waitKey(0);
 }
 
-Mat TraitementImage::DetectionVegetation(Mat& image){
+Mat TraitementImage::DetectionVegetation(){
 
     Mat pixelOfVegetation, mask;
 
     cvtColor(src, pixelOfVegetation, CV_BGR2GRAY);
-
     threshold(pixelOfVegetation, pixelOfVegetation, 110, 180,1);
 
     pixelOfVegetation.copyTo(mask);
 
-    srcVeg = Mat::ones(mask.rows,mask.cols,mask.type());   // Creation d'une matrice vide de 1
+    srcVeg = Mat::ones(mask.rows,mask.cols,mask.type());    // Creation d'une matrice vide de 1
+    srcVeg = srcVeg*255;                                    // On remplace la matrice par la value 255
 
-    srcVeg = srcVeg*255; // On remplace la matrice par la value 255
-
-    for(int j=0;j<srcVeg.rows;j++)
-    {
-        for (int i = 0; i < srcVeg.cols; i++)
-        {
-            if(pixelOfVegetation.at<uchar>(j,i) == 0) // Si pixel de l'image sont noir
-                srcVeg.at<uchar>(j,i) = 0; // alors on met le pixel de la matrice vide en noir
+    for (int j = 0; j < srcVeg.rows; j++){
+        for (int i = 0; i < srcVeg.cols; i++){
+            if (pixelOfVegetation.at<uchar>(j,i) == 0)      // Si pixel de l'image sont noir
+                srcVeg.at<uchar>(j,i) = 0;                  // alors on met le pixel de la matrice vide en noir
             else
-                srcVeg.at<uchar>(j,i) = 255; // sinon blanc
+                srcVeg.at<uchar>(j,i) = 255;                // sinon blanc
         }
     }
 
+    pixelOfVegetation.release();                            // Release memory Free
+    mask.release();                                         // Release memory Free
+
     srcVeg.convertTo(srcVeg, CV_8U);
-    src.convertTo(src, CV_8U);
-    Mat Vegetation = srcVeg ;
 
     return srcVeg;
 }
 
-
 vector <vector<Point> > TraitementImage::ObjectfindContour(Mat& imageFindContour){
-
     Mat canny_output;
     vector<vector<Point> > contours;
     vector<Vec4i> hierarchy;
     RNG rng(12345);
 
-    /// Detect edges using canny
+    /// 1. Detect edges using canny
     Canny( imageFindContour, canny_output, 100, 100*2, 3 );
 
-    /// Find contours
-    findContours( canny_output, contours, hierarchy, CV_RETR_TREE,
-                  CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+    /// 2. Find contours
+    findContours( canny_output, contours, hierarchy, CV_RETR_TREE,CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
 
-    /// Draw contours
-    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
-
-    for( int i = 0; i < contours.size(); i++ )
-    {
-        Scalar color = Scalar( rng.uniform(0, 255),
-                               rng.uniform(0,255), rng.uniform(0,255) );
-        drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0,
-                      Point() );
+    /// 3. Draw contours
+    Mat drawing = Mat::zeros(canny_output.size(), CV_8UC3);
+    for( int i = 0; i < contours.size(); i++ ){
+        if (contours.at(i).size() > 40){
+            Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
+            drawContours(drawing, contours, i, color, 2, 8, hierarchy, 0, Point());
+        }
     }
+
+    imageFindContour.release();                         // Release memory Free
+    canny_output.release();                             // Release memory Free
 
     imageFindContour = drawing;
 
@@ -113,9 +106,11 @@ vector <vector<Point> > TraitementImage::ObjectfindContour(Mat& imageFindContour
 }
 
 Mat TraitementImage::Erosion(Mat image, int valueOfErosion){
+
     Mat element = getStructuringElement(MORPH_ELLIPSE, Size( 2 * valueOfErosion + 1, 2 * valueOfErosion + 1), Point(valueOfErosion, valueOfErosion));
 
     erode(image, image, element);
+
     return image;
 }
 
@@ -124,17 +119,20 @@ Mat TraitementImage::Dilatation(Mat image, int valueOfDilatation){
     Mat element = getStructuringElement(MORPH_ELLIPSE, Size( 2 * valueOfDilatation + 1, 2 * valueOfDilatation + 1), Point(valueOfDilatation, valueOfDilatation));
 
     dilate(image, image, element);
+
     return image;
 }
 
 Mat TraitementImage::affiche(Mat& image, char* const title){
-    namedWindow(title, CV_WINDOW_NORMAL );
+
+    namedWindow(title, CV_WINDOW_NORMAL);
     imshow(title, image);
 
     return src;
 }
 
 Mat TraitementImage::thinningIteration(Mat& img, int iter){
+
     CV_Assert(img.channels() == 1);
     CV_Assert(img.depth() != sizeof(uchar));
     CV_Assert(img.rows > 3 && img.cols > 3);
@@ -206,19 +204,20 @@ Mat TraitementImage::thinningIteration(Mat& img, int iter){
     }
 
     img &= ~marker;
+    marker.release();      // Release memory Free
     return img;
 
 }
 
 Mat TraitementImage::thinning(){
-    Mat bw;
+
+    Mat bw, diff, prev;
     threshold(srcRoad, bw, 10, 255, CV_THRESH_BINARY);
 
     bw = bw.clone();
     bw /= 255;         // convert to binary image
 
-    Mat prev = Mat::zeros(bw.size(), CV_8UC1);
-    Mat diff;
+    prev = Mat::zeros(bw.size(), CV_8UC1);
 
     do {
         thinningIteration(bw, 0);
@@ -230,22 +229,35 @@ Mat TraitementImage::thinning(){
 
     bw *= 255;
     srcRoad = bw;
+
+
+    /// Release memory Free
+    bw.release();
+    diff.release();
+    prev.release();
+
     return srcRoad;
 
 }
 
 Mat TraitementImage::pixelOfRoad()
 {
-    Mat PixelRoad,image,channel[3], RoadMask;
+    Mat PixelRoad,channel[3], RoadMask;
     src.copyTo(PixelRoad);
+
+    /// Erosion & Dilatation
     PixelRoad = Erosion(PixelRoad, 2);
     PixelRoad = Dilatation(PixelRoad, 2);
     PixelRoad = Erosion(PixelRoad, 4);
     PixelRoad = Dilatation(PixelRoad, 5);
 
+    /// Get red band
     split(PixelRoad, channel);
-    RoadMask = channel[2]; // On récupère la bande rouge
+    RoadMask = channel[2];                          // On récupère la bande rouge
 
+    PixelRoad.release();                            // Release memory Free
+
+    /// Classification superisée
     int minRouge = 105;
     int maxRouge = 150;
 
@@ -261,8 +273,8 @@ Mat TraitementImage::pixelOfRoad()
 
 
     RoadMask.convertTo(RoadMask,CV_8U);
-    for (int row = 0; row < RoadMask.rows; row++) {
 
+    for (int row = 0; row < RoadMask.rows; row++) {
         for (int col = 0; col < RoadMask.cols; col++) {
 
             ChanBleu=(int)channel[0].at<uchar>(row,col) ;
@@ -282,8 +294,8 @@ Mat TraitementImage::pixelOfRoad()
             else RoadMask.at<uchar>(row,col) = 0;
 
         }
-
     }
+
     RoadMask = Erosion(RoadMask, 7);
     RoadMask = Dilatation(RoadMask, 30);
 
@@ -303,125 +315,83 @@ Mat TraitementImage::BatimentTraitement(Mat& image){
     RNG rng(12345);
 
 
-    /// Apply Bilateral Filter
+    /// 1. Apply Bilateral Filter
     bilateralFilter(image, bilateral, z, z, z);
 
-    /// Extract Channel Red
+    /// 2. Extract Channel Red
     split(bilateral, channel);
+    bilateral.release();                                // Release memory Free
+
     rouge = channel[2];
 
-    /// Apply Histogram Equalization
-    equalizeHist( rouge, image );                       // prend en entrée l'image en niveau de gris, crée une image equalize
+    /// 3. Apply Histogram Equalization
+    equalizeHist(rouge, image);                         // prend en entrée l'image en niveau de gris, crée une image equalize
+    rouge.release();                                    // Release memory Free
 
-    /// On passe toutes les pixels inférieurs à un seuil en noir
-    for(int j=0;j<image.rows;j++)
-    {
-        for (int i=0;i<image.cols;i++)
-        {
-            if( image.at<uchar>(j,i)<180)
-                image.at<uchar>(j,i) = 0; //white
+    /// 4. On passe toutes les pixels inférieurs à un seuil en noir
+    for (int j = 0; j < image.rows; j++){
+        for (int i=0; i < image.cols; i++){
+            if (image.at<uchar>(j,i) < 180)
+                image.at<uchar>(j,i) = 0;               // all pixel in black
             else
-                image.at<uchar>(j,i) = 255; //white
-
+                image.at<uchar>(j,i) = 255;             // all pixel in white
         }
     }
+
+    /// 5. Erosion / Dilatation
     image = Erosion(image, 1);
     image = Dilatation(image, 1);
     image = Erosion(image, 2);
     image = Dilatation(image, 1);
 
+    /// 6. Detect edges using canny
+    Canny(image, canny_output, 100, 100*2, 3);
 
-    /// Obtenir une zone uniforme
-    Mat imageDilatation = image;
-
-    Mat A= Mat::ones(imageDilatation.rows,imageDilatation.cols,CV_8U);
-
-    imageSoustraction = image-(A*255 - imageDilatation);
-
-
-    threshold(imageSoustraction, image_thresh, 125, 255, THRESH_BINARY);
-
-
-    image_thresh.copyTo(mask);                                               // Loop through the border pixels and if they're black, floodFill from there
-    for (int i = 0; i < mask.cols; i++) {
-        if (mask.at<char>(0, i) == 0) {
-            floodFill(mask, Point(i, 0), 255, 0, 10, 10);
-        }
-        if (mask.at<char>(mask.rows-1, i) == 0) {
-            floodFill(mask, Point(i, mask.rows-1), 255, 0, 10, 10);
-        }
-    }
-    for (int i = 0; i < mask.rows; i++) {
-        if (mask.at<char>(i, 0) == 0) {
-            floodFill(mask, Point(0, i), 255, 0, 10, 10);
-        }
-        if (mask.at<char>(i, mask.cols-1) == 0) {
-            floodFill(mask, Point(mask.cols-1, i), 255, 0, 10, 10);
-        }
-    }
-
-
-
-    for (int row = 0; row < mask.rows; ++row) {                              // Compare mask with original.
-
-        for (int col = 0; col < mask.cols; ++col) {
-            if (mask.at<char>(row, col) == 0) {
-                image.at<char>(row, col) = 255;
-            }
-        }
-
-    }
-
-    /// Detect edges using canny
-    Canny( image, canny_output, 100, 100*2, 3 );
-
-    /// Find contours
-    findContours( canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
-
+    /// 7. Find contours
+    findContours(canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
 
     vector<RotatedRect> minRect(contours.size());
     for (int i = 0; i < contours.size(); i++ ){
         minRect[i] = minAreaRect(Mat(contours[i]));
     }
 
-    batiContours = minRect;
+    batiContours = minRect;                             // On recupère les contours
 
-    Mat drawingBatiment = Mat::zeros( canny_output.size(), CV_8UC3 );
-
-    for (int i = 0; i < contours.size(); i++)
-    {
+    /// Draw contour
+    Mat drawingBatiment = Mat::zeros(canny_output.size(), CV_8UC3 );
+    for (int i = 0; i < contours.size(); i++){
         if (contours.at(i).size() > 40){
-            Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-
-            Point2f rect_points[4]; minRect[i].points(rect_points);             //rotated rectangle
+            Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
+            Point2f rect_points[4]; minRect[i].points(rect_points);             // Rotated rectangle
 
             for (int j = 0; j < 4; j++)
                 line(drawingBatiment, rect_points[j], rect_points[(j+1)%4], color, 1, 8);
         }
-
     }
 
+    canny_output.release();                         // Release memory Free
     image = drawingBatiment;
-    return image;
+    drawingBatiment.release();
+    affiche(image, "Contour Batiment");
 
+    return image;
 }
+
 
 vector<vector<Point>> TraitementImage::exportcontour(int i){
 
     if (i == 1)
-       return roadContours ;
+        return roadContours;
 
     else if (i == 2)
         return vegetContours;
-
 }
 
 vector<RotatedRect> TraitementImage::exportcontourBati(){
 
-       return batiContours;
-
+    return batiContours;
 }
 
 TraitementImage::~TraitementImage(){
-    delete this;
+
 }
